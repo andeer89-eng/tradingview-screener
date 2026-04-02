@@ -23,7 +23,7 @@ def create_app(
     router:  AlertRouter | None = None,
 ) -> Flask:
     root_dir = Path(__file__).resolve().parent.parent
-    app = Flask(__name__, static_folder=str(root_dir), static_url_path="")
+    app = Flask(__name__, static_folder=None)
 
     _fetcher = fetcher or DataFetcher()
     _router  = router or AlertRouter()
