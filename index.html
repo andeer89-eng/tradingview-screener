@@ -351,12 +351,12 @@
 
         /* ===== Scan presets ===== */
         var SCANS = [
-            { id: 'most_capitalized', label: 'Top Cap',     icon: 'fa-building-columns', screen: 'most_capitalized' },
-            { id: 'top_gainers',      label: 'Gainers',     icon: 'fa-arrow-trend-up',   screen: 'top_gainers' },
-            { id: 'top_losers',       label: 'Losers',      icon: 'fa-arrow-trend-down',  screen: 'top_losers' },
-            { id: 'most_volatile',    label: 'Volatile',    icon: 'fa-bolt',             screen: 'most_volatile' },
-            { id: 'oversold',         label: 'Oversold',    icon: 'fa-arrow-down',       screen: 'oversold_stocks' },
-            { id: 'overbought',       label: 'Overbought',  icon: 'fa-arrow-up',         screen: 'overbought_stocks' }
+            { label: 'Top Cap',     icon: 'fa-building-columns', screen: 'most_capitalized' },
+            { label: 'Gainers',     icon: 'fa-arrow-trend-up',   screen: 'top_gainers' },
+            { label: 'Losers',      icon: 'fa-arrow-trend-down',  screen: 'top_losers' },
+            { label: 'Volatile',    icon: 'fa-bolt',             screen: 'most_volatile' },
+            { label: 'High Volume', icon: 'fa-arrow-down',       screen: 'volume_leaders' },
+            { label: 'Unusual Vol', icon: 'fa-arrow-up',         screen: 'unusual_volume' }
         ];
 
         /* ===== Market summary ===== */
@@ -389,7 +389,7 @@
         function fmtP(n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
         function randW() { return (Math.random() - 0.5) * 2; }
 
-        /* ===== Widget injection — config as sibling text node ===== */
+        /* ===== Widget injection — config as script textContent ===== */
         function injectWidget(containerId, src, config) {
             try {
                 var el = $(containerId);
@@ -397,11 +397,12 @@
                 el.innerHTML = '';
 
                 var wrapper = document.createElement('div');
-                wrapper.className = 'tv-embed-container';
+                wrapper.className = 'tradingview-widget-container';
                 wrapper.style.height = '100%';
                 wrapper.style.width = '100%';
 
                 var inner = document.createElement('div');
+                inner.className = 'tradingview-widget-container__widget';
                 inner.style.height = '100%';
                 inner.style.width = '100%';
                 wrapper.appendChild(inner);
@@ -409,9 +410,9 @@
                 var s = document.createElement('script');
                 s.type = 'text/javascript';
                 s.src = src;
+                s.async = true;
+                s.textContent = JSON.stringify(config);
                 wrapper.appendChild(s);
-
-                wrapper.appendChild(document.createTextNode(JSON.stringify(config)));
 
                 el.appendChild(wrapper);
             } catch (err) {
@@ -734,7 +735,6 @@
             $('analysis-sym').value = sym;
             S.inited.analysis = false;
             goTab('analysis');
-            requestAnimationFrame(initAnalysis);
         };
 
         /* ===== Market Summary ===== */
