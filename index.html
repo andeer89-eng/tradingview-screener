@@ -272,12 +272,27 @@
                     <button role="tab" aria-selected="false" class="tab-btn px-4 py-2 text-sm font-medium text-t-muted rounded-md transition-colors" data-tab="analysis" onclick="goTab('analysis')">
                         <i class="fas fa-wave-square mr-1.5 text-[11px]"></i>Analysis
                     </button>
+                    <button role="tab" aria-selected="false" class="tab-btn px-4 py-2 text-sm font-medium text-t-muted rounded-md transition-colors" data-tab="signals" onclick="goTab('signals')">
+                        <i class="fas fa-signal mr-1.5 text-[11px]"></i>Signals
+                    </button>
                 </div>
                 <div class="tab-indicator" id="tab-ind"></div>
 
                 <div id="analysis-input" class="ml-auto items-center gap-1.5 hidden">
                     <input type="text" id="analysis-sym" value="AAPL" placeholder="Symbol" class="bg-t-elevated border border-t-border rounded-lg px-3 py-1.5 text-xs font-mono text-t-text placeholder-t-muted/40 focus:outline-none focus:border-t-green/50 transition-colors w-28" onkeydown="if(event.key==='Enter')runAnalysis()" aria-label="Analysis symbol">
                     <button onclick="runAnalysis()" class="text-t-green hover:text-t-green/70 transition-colors" aria-label="Run analysis">
+                        <i class="fas fa-arrow-right text-xs"></i>
+                    </button>
+                </div>
+                <div id="signals-input" class="ml-auto items-center gap-1.5 hidden">
+                    <input type="text" id="signal-sym" value="AAPL" placeholder="Symbol" class="bg-t-elevated border border-t-border rounded-lg px-3 py-1.5 text-xs font-mono text-t-text placeholder-t-muted/40 focus:outline-none focus:border-t-green/50 transition-colors w-28" onkeydown="if(event.key==='Enter')runSignal()" aria-label="Signal symbol">
+                    <select id="signal-interval" class="bg-t-elevated border border-t-border rounded-lg px-2 py-1.5 text-xs font-mono text-t-text focus:outline-none focus:border-t-green/50 transition-colors">
+                        <option value="1h">1H</option>
+                        <option value="4h">4H</option>
+                        <option value="1D">1D</option>
+                        <option value="1W">1W</option>
+                    </select>
+                    <button onclick="runSignal()" class="text-t-green hover:text-t-green/70 transition-colors" aria-label="Run signal">
                         <i class="fas fa-arrow-right text-xs"></i>
                     </button>
                 </div>
@@ -293,6 +308,15 @@
                 <div id="panel-analysis" class="absolute inset-0 hidden" role="tabpanel">
                     <div id="analysis-wrap" class="tv-embed-container"></div>
                 </div>
+                <div id="panel-signals" class="absolute inset-0 hidden overflow-y-auto" role="tabpanel">
+                    <div id="signals-wrap" class="p-6 max-w-3xl mx-auto">
+                        <div class="text-center text-t-muted py-20">
+                            <i class="fas fa-signal text-4xl mb-4 block opacity-20"></i>
+                            <p class="text-sm">Enter a symbol and click <i class="fas fa-arrow-right text-xs"></i> to run composite signal analysis</p>
+                            <p class="text-xs mt-2 opacity-60">Powered by RSI, MACD, Bollinger Bands, SuperTrend &amp; VWAP</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -307,6 +331,7 @@
             <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">S</kbd>Screener</span>
             <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">H</kbd>Heatmap</span>
             <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">A</kbd>Analysis</span>
+            <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">G</kbd>Signals</span>
             <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">W</kbd>Watchlist</span>
         </div>
     </footer>
@@ -322,7 +347,7 @@
             market: 'america',
             mktLabel: 'US Markets',
             scan: 'most_capitalized',
-            inited: { screener: false, heatmap: false, analysis: false },
+            inited: { screener: false, heatmap: false, analysis: false, signals: false },
             watchlist: []
         };
 
@@ -508,7 +533,7 @@
                 b.setAttribute('aria-selected', active ? 'true' : 'false');
             }
 
-            var panels = ['screener', 'heatmap', 'analysis'];
+            var panels = ['screener', 'heatmap', 'analysis', 'signals'];
             for (var j = 0; j < panels.length; j++) {
                 var p = panels[j];
                 var el = $('panel-' + p);
@@ -523,6 +548,7 @@
             }
 
             $('analysis-input').style.display = (id === 'analysis') ? 'flex' : 'none';
+            $('signals-input').style.display = (id === 'signals') ? 'flex' : 'none';
             moveIndicator();
 
             if (id === 'heatmap' && !S.inited.heatmap) initHeatmap();
@@ -628,6 +654,132 @@
             toast('Analyzing ' + sym, 'info');
         };
 
+        /* ===== Signal Engine (backend API) ===== */
+        window.runSignal = function() {
+            var symEl = $('signal-sym');
+            var intEl = $('signal-interval');
+            var sym = (symEl && symEl.value) ? symEl.value.trim().toUpperCase() : '';
+            var interval = (intEl && intEl.value) ? intEl.value : '1h';
+            if (!sym) return;
+
+            var wrap = $('signals-wrap');
+            wrap.innerHTML = '<div class="text-center text-t-muted py-20"><i class="fas fa-spinner fa-spin text-2xl mb-4 block text-t-green"></i><p class="text-sm">Analyzing ' + sym + '...</p></div>';
+            toast('Running signal analysis for ' + sym, 'info');
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/signal/' + encodeURIComponent(sym) + '?interval=' + encodeURIComponent(interval));
+            xhr.timeout = 30000;
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    try {
+                        var data = JSON.parse(xhr.responseText);
+                        renderSignalResult(data);
+                        toast(sym + ': ' + data.rating + ' (' + (data.score >= 0 ? '+' : '') + data.score.toFixed(3) + ')', 'success');
+                    } catch (e) {
+                        wrap.innerHTML = '<div class="text-center text-t-red py-20"><i class="fas fa-exclamation-triangle text-2xl mb-4 block"></i><p class="text-sm">Failed to parse response</p></div>';
+                        toast('Signal parse error', 'error');
+                    }
+                } else {
+                    var errMsg = 'Server error (' + xhr.status + ')';
+                    try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch (e) {}
+                    wrap.innerHTML = '<div class="text-center text-t-red py-20"><i class="fas fa-exclamation-triangle text-2xl mb-4 block"></i><p class="text-sm">' + errMsg + '</p></div>';
+                    toast('Signal failed: ' + errMsg, 'error');
+                }
+            };
+            xhr.onerror = function() {
+                wrap.innerHTML = '<div class="text-center text-t-muted py-20"><i class="fas fa-plug text-2xl mb-4 block opacity-40"></i><p class="text-sm">Cannot connect to backend</p><p class="text-xs mt-2 opacity-60">Start the server: <code class="bg-t-elevated px-2 py-1 rounded">python main.py</code></p></div>';
+                toast('Backend not reachable', 'warning');
+            };
+            xhr.ontimeout = function() {
+                wrap.innerHTML = '<div class="text-center text-t-yellow py-20"><i class="fas fa-clock text-2xl mb-4 block"></i><p class="text-sm">Request timed out</p></div>';
+                toast('Signal request timed out', 'warning');
+            };
+            xhr.send();
+        };
+
+        function renderSignalResult(data) {
+            var wrap = $('signals-wrap');
+            var score = data.score || 0;
+            var rating = data.rating || 'NEUTRAL';
+            var signals = data.signals || {};
+            var components = data.components || {};
+
+            var ratingColors = {
+                'STRONG BUY':  { bg: 'rgba(0,229,160,0.15)', border: '#00e5a0', text: '#00e5a0' },
+                'BUY':         { bg: 'rgba(0,212,255,0.15)', border: '#00d4ff', text: '#00d4ff' },
+                'NEUTRAL':     { bg: 'rgba(122,139,167,0.15)', border: '#7a8ba7', text: '#7a8ba7' },
+                'SELL':        { bg: 'rgba(255,208,0,0.15)',  border: '#ffd000', text: '#ffd000' },
+                'STRONG SELL': { bg: 'rgba(255,59,92,0.15)',  border: '#ff3b5c', text: '#ff3b5c' }
+            };
+            var rc = ratingColors[rating] || ratingColors['NEUTRAL'];
+
+            var signalLabels = {
+                rsi:  { name: 'RSI',         icon: 'fa-chart-line',     weight: '20%' },
+                macd: { name: 'MACD',        icon: 'fa-wave-square',    weight: '25%' },
+                bb:   { name: 'Bollinger',   icon: 'fa-arrows-alt-v',   weight: '15%' },
+                st:   { name: 'SuperTrend',  icon: 'fa-arrow-trend-up', weight: '25%' },
+                vwap: { name: 'VWAP',        icon: 'fa-scale-balanced', weight: '15%' }
+            };
+
+            var scoreBarPct = Math.round((score + 1) / 2 * 100);
+            var scoreSign = score >= 0 ? '+' : '';
+
+            var html = '';
+
+            /* Header card */
+            html += '<div class="rounded-2xl border p-6 mb-6" style="background:' + rc.bg + ';border-color:' + rc.border + '">';
+            html += '<div class="flex items-center justify-between mb-4">';
+            html += '<div><span class="text-2xl font-bold font-mono">' + data.ticker + '</span>';
+            html += '<span class="text-xs text-t-muted ml-2">' + (data.interval || '1h').toUpperCase() + '</span></div>';
+            html += '<div class="text-right"><div class="text-xl font-bold" style="color:' + rc.text + '">' + rating + '</div>';
+            html += '<div class="text-sm font-mono text-t-muted">Score: ' + scoreSign + score.toFixed(4) + '</div></div></div>';
+
+            /* Score bar */
+            html += '<div class="relative h-3 rounded-full bg-t-elevated overflow-hidden">';
+            html += '<div class="absolute inset-y-0 left-0 rounded-full transition-all" style="width:' + scoreBarPct + '%;background:linear-gradient(90deg,#ff3b5c,#ffd000 40%,#00e5a0 70%,#00d4ff)"></div>';
+            html += '<div class="absolute inset-y-0 w-0.5 bg-white/60" style="left:50%"></div>';
+            html += '</div>';
+            html += '<div class="flex justify-between text-[10px] text-t-muted mt-1 font-mono"><span>STRONG SELL</span><span>NEUTRAL</span><span>STRONG BUY</span></div>';
+            html += '</div>';
+
+            /* Individual indicators */
+            html += '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">';
+            var keys = ['rsi', 'macd', 'bb', 'st', 'vwap'];
+            for (var i = 0; i < keys.length; i++) {
+                var k = keys[i];
+                var sl = signalLabels[k];
+                var sigVal = signals[k] || 'n/a';
+                var compScore = components[k] !== undefined ? components[k] : 0;
+                var compSign = compScore >= 0 ? '+' : '';
+                var compColor = compScore > 0 ? '#00e5a0' : compScore < 0 ? '#ff3b5c' : '#7a8ba7';
+
+                html += '<div class="rounded-xl border border-t-border bg-t-surface p-4">';
+                html += '<div class="flex items-center justify-between mb-2">';
+                html += '<div class="flex items-center gap-2"><i class="fas ' + sl.icon + ' text-t-cyan text-xs"></i>';
+                html += '<span class="text-sm font-medium">' + sl.name + '</span></div>';
+                html += '<span class="text-[10px] text-t-muted">w: ' + sl.weight + '</span></div>';
+                html += '<div class="text-xs font-mono text-t-muted mb-1">' + sigVal.replace(/_/g, ' ') + '</div>';
+                html += '<div class="text-lg font-bold font-mono" style="color:' + compColor + '">' + compSign + compScore.toFixed(1) + '</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+
+            /* How to use hint */
+            html += '<div class="rounded-xl border border-t-border bg-t-elevated/50 p-4 text-xs text-t-muted">';
+            html += '<i class="fas fa-info-circle mr-1.5 text-t-cyan"></i>';
+            html += 'Composite signal from 5 indicators weighted by reliability. Score range: -1.0 (strong sell) to +1.0 (strong buy). ';
+            html += 'Data fetched via Yahoo Finance. Click any watchlist symbol to auto-fill.';
+            html += '</div>';
+
+            wrap.innerHTML = html;
+        }
+
+        window.viewSignal = function(sym) {
+            $('signal-sym').value = sym;
+            goTab('signals');
+            runSignal();
+        };
+
         /* ===== Scan Buttons ===== */
         function renderScans() {
             var html = '';
@@ -693,6 +845,7 @@
                 html += '<div class="flex items-center gap-2.5 flex-shrink-0">';
                 html += '<span class="text-[11px] font-mono text-t-muted">$' + fmtP(d.price) + '</span>';
                 html += '<span class="text-[11px] font-mono font-medium ' + chgCls + ' min-w-[52px] text-right">' + chgSign + fmt(d.change) + '%</span>';
+                html += '<button onclick="event.stopPropagation();viewSignal(\'' + sym + '\')" class="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded text-t-muted hover:text-t-cyan hover:bg-t-cyan/10 transition-all" aria-label="Signal ' + sym + '" title="Run signal analysis"><i class="fas fa-signal text-[10px]"></i></button>';
                 html += '<button onclick="event.stopPropagation();rmSym(' + i + ')" class="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded text-t-muted hover:text-t-red hover:bg-t-red/10 transition-all" aria-label="Remove ' + sym + '"><i class="fas fa-xmark text-[10px]"></i></button>';
                 html += '</div></div>';
             }
@@ -795,6 +948,7 @@
             if (key === 's') goTab('screener');
             else if (key === 'h') goTab('heatmap');
             else if (key === 'a') goTab('analysis');
+            else if (key === 'g') goTab('signals');
             else if (key === 'w') toggleAddInput();
             else if (key === 'escape') {
                 $('mkt-dd').classList.remove('dd-open');
