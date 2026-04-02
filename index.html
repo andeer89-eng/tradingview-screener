@@ -89,14 +89,17 @@
             pointer-events: none; z-index: 100;
         }
 
-        /* Tab sliding indicator */
+        /* FIX #1: Tab indicator — now positioned relative to <nav>, not #tab-bar */
         .tab-indicator {
-            position: absolute; bottom: 0;
+            position: absolute;
+            bottom: 0;
             height: 2px;
             background: #00e5a0;
             transition: left 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1);
             box-shadow: 0 0 12px rgba(0,229,160,0.5);
             border-radius: 1px;
+            z-index: 5;
+            pointer-events: none;
         }
 
         /* Scan preset buttons */
@@ -130,13 +133,21 @@
         .toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
         .toast-out { animation: toast-out 0.3s ease forwards; }
 
-        /* Fade in */
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .fade-in { animation: fadeIn 0.35s ease; }
+        /* FIX #2: Fade animation — uses a class that gets fully removed and re-added with reflow */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease forwards; }
 
         /* TradingView overrides */
         .tv-embed-container { height: 100% !important; width: 100% !important; }
         .tv-embed-container > div:first-child { height: 100% !important; width: 100% !important; }
+
+        /* FIX #4: Panel container blocks iframe escape */
+        .panel-clip {
+            position: relative;
+            overflow: hidden;
+            /* Create new stacking context so iframes can't escape */
+            isolation: isolate;
+        }
 
         /* Mobile sidebar drawer */
         @media (max-width: 768px) {
@@ -261,9 +272,10 @@
 
         <!-- CONTENT PANEL -->
         <section class="flex-1 flex flex-col overflow-hidden min-w-0">
-            <!-- Tab Bar -->
-            <nav class="h-12 flex items-center px-4 border-b border-t-border bg-t-surface/40 flex-shrink-0 relative" role="tablist" aria-label="Main views">
-                <div class="flex items-center gap-0.5 relative" id="tab-bar">
+
+            <!-- FIX #4: Nav gets z-index so it stays above TradingView iframes -->
+            <nav id="main-nav" class="h-12 flex items-center px-4 border-b border-t-border bg-t-surface/40 flex-shrink-0 relative z-10" role="tablist" aria-label="Main views">
+                <div class="flex items-center gap-0.5" id="tab-bar">
                     <button role="tab" aria-selected="true" class="tab-btn px-4 py-2 text-sm font-medium text-t-text rounded-md transition-colors" data-tab="screener" onclick="goTab('screener')">
                         <i class="fas fa-filter mr-1.5 text-[11px]"></i>Screener
                     </button>
@@ -274,6 +286,7 @@
                         <i class="fas fa-wave-square mr-1.5 text-[11px]"></i>Analysis
                     </button>
                 </div>
+                <!-- Indicator is a direct child of <nav>, so position:relative on nav is the reference -->
                 <div class="tab-indicator" id="tab-ind"></div>
 
                 <!-- Analysis symbol input -->
@@ -287,8 +300,8 @@
                 </div>
             </nav>
 
-            <!-- Tab Panels -->
-            <div class="flex-1 relative overflow-hidden">
+            <!-- FIX #4: Panel container uses isolation to block iframe z-index escape -->
+            <div class="flex-1 panel-clip">
                 <div id="panel-screener" class="absolute inset-0 fade-in" role="tabpanel">
                     <div id="screener-wrap" class="tv-embed-container"></div>
                 </div>
@@ -339,16 +352,16 @@
             BTC:104287, ETH:3842, SOL:228, BNB:718, XRP:2.42,
             SPY:594.20, QQQ:524.80, DIA:432.50, IWM:236.40,
         };
-        const WL_PRICES = {}; // runtime simulated prices
+        const WL_PRICES = {};
 
         /* ===== Scan presets ===== */
         const SCANS = [
-            { id:'most_capitalized', label:'Top Cap',   icon:'fa-building-columns', screen:'most_capitalized' },
-            { id:'top_gainers',      label:'Gainers',   icon:'fa-arrow-trend-up',   screen:'top_gainers' },
-            { id:'top_losers',       label:'Losers',    icon:'fa-arrow-trend-down',  screen:'top_losers' },
-            { id:'most_volatile',    label:'Volatile',  icon:'fa-bolt',             screen:'most_volatile' },
-            { id:'oversold',         label:'Oversold',  icon:'fa-arrow-down',       screen:'oversold_stocks' },
-            { id:'overbought',       label:'Overbought',icon:'fa-arrow-up',         screen:'overbought_stocks' },
+            { id:'most_capitalized', label:'Top Cap',    icon:'fa-building-columns', screen:'most_capitalized' },
+            { id:'top_gainers',      label:'Gainers',    icon:'fa-arrow-trend-up',   screen:'top_gainers' },
+            { id:'top_losers',       label:'Losers',     icon:'fa-arrow-trend-down',  screen:'top_losers' },
+            { id:'most_volatile',    label:'Volatile',   icon:'fa-bolt',             screen:'most_volatile' },
+            { id:'oversold',         label:'Oversold',   icon:'fa-arrow-down',       screen:'oversold_stocks' },
+            { id:'overbought',       label:'Overbought', icon:'fa-arrow-up',         screen:'overbought_stocks' },
         ];
 
         /* ===== Market summary data ===== */
@@ -381,15 +394,35 @@
         const fmtP = n => n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
         const randW = () => (Math.random() - 0.5) * 2;
 
-        /* ===== Widget injection ===== */
+        /* ===== FIX #3: Widget injection — JSON as sibling text node, not script textContent ===== */
         function injectWidget(containerId, src, config) {
-            const el = $(containerId);
-            el.innerHTML = `<div class="tv-embed-container"><div style="height:100%;width:100%;"></div></div>`;
-            const s = document.createElement('script');
-            s.type = 'text/javascript';
-            s.src = src;
-            s.textContent = JSON.stringify(config);
-            el.firstChild.appendChild(s);
+            try {
+                const el = $(containerId);
+                if (!el) return;
+                el.innerHTML = '';
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'tv-embed-container';
+                wrapper.style.height = '100%';
+                wrapper.style.width = '100%';
+
+                const inner = document.createElement('div');
+                inner.style.height = '100%';
+                inner.style.width = '100%';
+                wrapper.appendChild(inner);
+
+                const s = document.createElement('script');
+                s.type = 'text/javascript';
+                s.src = src;
+                wrapper.appendChild(s);
+
+                // TradingView reads config from the text node AFTER the script tag
+                wrapper.appendChild(document.createTextNode(JSON.stringify(config)));
+
+                el.appendChild(wrapper);
+            } catch (err) {
+                console.warn('Widget injection failed:', containerId, err);
+            }
         }
 
         /* ===== Toast ===== */
@@ -425,40 +458,57 @@
                 i.classList.toggle('text-t-text', i.dataset.mkt !== mkt);
             });
             renderSummary();
-            // Re-init screener after switching tab
             if (S.tab !== 'screener') goTab('screener');
             requestAnimationFrame(() => { S.inited.screener = false; S.inited.heatmap = false; initScreener(); });
             toast('Switched to ' + label, 'info');
         };
 
-        /* ===== Tabs ===== */
+        /* ===== FIX #1 & #2: Tab switching — indicator uses <nav> as reference, fade re-triggers ===== */
         window.goTab = (id) => {
             S.tab = id;
+
+            // Update button states
             document.querySelectorAll('.tab-btn').forEach(b => {
                 const active = b.dataset.tab === id;
                 b.classList.toggle('text-t-text', active);
                 b.classList.toggle('text-t-muted', !active);
                 b.setAttribute('aria-selected', active);
             });
+
+            // Switch panels with reflow trick so fade-in replays every time
             ['screener','heatmap','analysis'].forEach(p => {
                 const el = $('panel-'+p);
-                el.classList.toggle('hidden', p !== id);
-                if (p === id) { el.classList.add('fade-in'); } else { el.classList.remove('fade-in'); }
+                if (p === id) {
+                    el.classList.remove('hidden','fade-in');
+                    void el.offsetWidth; // force browser reflow — THIS is what makes the animation replay
+                    el.classList.add('fade-in');
+                } else {
+                    el.classList.add('hidden');
+                    el.classList.remove('fade-in');
+                }
             });
+
+            // Show/hide analysis input
             $('analysis-input').style.display = id === 'analysis' ? 'flex' : 'none';
+
+            // Slide indicator
             moveIndicator();
+
+            // Lazy-init widgets
             if (id === 'heatmap' && !S.inited.heatmap) initHeatmap();
             if (id === 'analysis' && !S.inited.analysis) initAnalysis();
         };
 
+        /* FIX #1: Indicator position calculated relative to <nav>, not #tab-bar */
         function moveIndicator() {
             const btn = document.querySelector('.tab-btn[aria-selected="true"]');
             const ind = $('tab-ind');
-            const bar = $('tab-bar');
-            if (!btn || !ind || !bar) return;
-            const br = bar.getBoundingClientRect(), btnr = btn.getBoundingClientRect();
-            ind.style.left = (btnr.left - br.left) + 'px';
-            ind.style.width = btnr.width + 'px';
+            const nav = $('main-nav'); // <nav> is the positioned ancestor of the indicator
+            if (!btn || !ind || !nav) return;
+            const navRect = nav.getBoundingClientRect();
+            const btnRect = btn.getBoundingClientRect();
+            ind.style.left = (btnRect.left - navRect.left) + 'px';
+            ind.style.width = btnRect.width + 'px';
         }
 
         /* ===== Widget Initializers ===== */
@@ -682,7 +732,6 @@
             moveIndicator();
 
             initTicker();
-            // Small delay so the screener container has layout
             setTimeout(initScreener, 100);
 
             setInterval(simMarket, 3000);
