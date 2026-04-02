@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TradingView Screener Terminal — Advanced stock & crypto screening with real-time data">
+    <meta name="theme-color" content="#070b14">
+    <title>Screener Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'monospace'],
+                        sans: ['Space Grotesk', 'sans-serif'],
+                    },
+                    colors: {
+                        t: {
+                            bg: '#070b14',
+                            surface: '#0d1321',
+                            elevated: '#151d2e',
+                            border: '#1a2744',
+                            text: '#e8edf5',
+                            muted: '#7a8ba7',
+                            green: '#00e5a0',
+                            red: '#ff3b5c',
+                            cyan: '#00d4ff',
+                            yellow: '#ffd000',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: #070b14;
+            color: #e8edf5;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0d1321; }
+        ::-webkit-scrollbar-thumb { background: #1a2744; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2a3a5c; }
+
+        /* Subtle grid background */
+        .bg-grid {
+            background-image:
+                linear-gradient(rgba(26,39,68,0.25) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(26,39,68,0.25) 1px, transparent 1px);
+            background-size: 48px 48px;
+        }
+
+        /* Header gradient underline */
+        .glow-border::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 5%, #00e5a0 35%, #00d4ff 65%, transparent 95%);
+            opacity: 0.5;
+        }
+
+        /* Live pulse dot */
+        @keyframes pulse-live {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,229,160,0.6); }
+            50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(0,229,160,0); }
+        }
+        .pulse-dot { animation: pulse-live 2s ease-in-out infinite; }
+
+        /* Scan line effect */
+        @keyframes scanline {
+            0% { top: -2px; }
+            100% { top: 100vh; }
+        }
+        .scanline {
+            position: fixed; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0,229,160,0.07), transparent);
+            animation: scanline 10s linear infinite;
+            pointer-events: none; z-index: 100;
+        }
+
+        /* Tab sliding indicator */
+        .tab-indicator {
+            position: absolute; bottom: 0;
+            height: 2px;
+            background: #00e5a0;
+            transition: left 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 0 0 12px rgba(0,229,160,0.5);
+            border-radius: 1px;
+        }
+
+        /* Scan preset buttons */
+        .btn-scan {
+            transition: all 0.15s ease;
+            border: 1px solid #1a2744;
+        }
+        .btn-scan:hover { border-color: rgba(0,229,160,0.4); background: rgba(0,229,160,0.06); }
+        .btn-scan.active { border-color: #00e5a0; background: rgba(0,229,160,0.12); color: #00e5a0; }
+
+        /* Watchlist item */
+        .wl-item {
+            transition: all 0.12s ease;
+            border-left: 2px solid transparent;
+        }
+        .wl-item:hover { background: rgba(0,229,160,0.04); border-left-color: rgba(0,229,160,0.25); }
+
+        /* Market dropdown */
+        .dd-menu {
+            opacity: 0; transform: translateY(-6px) scale(0.98);
+            pointer-events: none;
+            transition: all 0.2s ease;
+        }
+        .dd-open .dd-menu { opacity: 1; transform: translateY(2px) scale(1); pointer-events: auto; }
+        .dd-item { transition: background 0.12s; }
+        .dd-item:hover { background: rgba(0,229,160,0.08); }
+
+        /* Toast */
+        @keyframes toast-in { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toast-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+        .toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
+        .toast-out { animation: toast-out 0.3s ease forwards; }
+
+        /* Fade in */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .fade-in { animation: fadeIn 0.35s ease; }
+
+        /* TradingView overrides */
+        .tv-embed-container { height: 100% !important; width: 100% !important; }
+        .tv-embed-container > div:first-child { height: 100% !important; width: 100% !important; }
+
+        /* Mobile sidebar drawer */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed; left: -320px; top: 0; bottom: 0;
+                z-index: 50; transition: left 0.3s cubic-bezier(0.4,0,0.2,1);
+                box-shadow: none;
+            }
+            .sidebar.open { left: 0; box-shadow: 20px 0 60px rgba(0,0,0,0.6); }
+        }
+
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-grid flex flex-col">
+    <!-- Ambient scan line -->
+    <div class="scanline"></div>
+
+    <!-- Toast container -->
+    <div id="toasts" class="fixed top-16 right-3 z-[200] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Mobile sidebar overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- ========== HEADER ========== -->
+    <header class="relative glow-border h-14 flex items-center justify-between px-4 bg-t-surface/80 backdrop-blur-md flex-shrink-0 z-30">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar()" class="md:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-t-elevated transition-colors text-t-muted" aria-label="Toggle sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-t-green to-t-cyan flex items-center justify-center shadow-lg shadow-t-green/10">
+                    <i class="fas fa-chart-line text-t-bg text-xs font-bold"></i>
+                </div>
+                <div class="leading-none">
+                    <span class="text-[13px] font-bold tracking-widest">SCREENER</span>
+                    <span class="block text-[9px] text-t-muted tracking-[0.2em] mt-0.5">TERMINAL</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Selector -->
+        <div class="relative" id="mkt-dd">
+            <button onclick="toggleDropdown()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-t-border hover:border-t-green/40 transition-colors text-sm" aria-label="Select market" aria-haspopup="true">
+                <i class="fas fa-globe text-t-green text-[11px]"></i>
+                <span id="mkt-label" class="hidden sm:inline">US Markets</span>
+                <i class="fas fa-chevron-down text-t-muted text-[10px] ml-0.5"></i>
+            </button>
+            <div class="dd-menu absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[190px] bg-t-elevated border border-t-border rounded-xl p-1.5 shadow-2xl shadow-black/40 z-50">
+                <div class="dd-item px-3 py-2 rounded-lg cursor-pointer text-sm flex items-center gap-2 text-t-green" data-mkt="america" onclick="pickMarket('america','US Markets')"><i class="fas fa-flag-usa text-xs w-4 text-center"></i>US Markets</div>
+                <div class="dd-item px-3 py-2 rounded-lg cursor-pointer text-sm flex items-center gap-2" data-mkt="europe" onclick="pickMarket('europe','Europe')"><i class="fas fa-landmark text-xs w-4 text-center"></i>Europe</div>
+                <div class="dd-item px-3 py-2 rounded-lg cursor-pointer text-sm flex items-center gap-2" data-mkt="hongkong" onclick="pickMarket('hongkong','Hong Kong')"><i class="fas fa-building text-xs w-4 text-center"></i>Hong Kong</div>
+                <div class="dd-item px-3 py-2 rounded-lg cursor-pointer text-sm flex items-center gap-2" data-mkt="crypto" onclick="pickMarket('crypto','Crypto')"><i class="fab fa-bitcoin text-xs w-4 text-center"></i>Crypto</div>
+            </div>
+        </div>
+
+        <!-- Status + Clock -->
+        <div class="flex items-center gap-4">
+            <div class="hidden sm:flex items-center gap-2 text-[11px] text-t-muted">
+                <div class="w-[7px] h-[7px] rounded-full bg-t-green pulse-dot"></div>
+                <span class="tracking-wider font-medium">LIVE</span>
+            </div>
+            <time class="font-mono text-sm text-t-muted tabular-nums" id="clock">--:--:--</time>
+        </div>
+    </header>
+
+    <!-- ========== TICKER TAPE ========== -->
+    <div class="flex-shrink-0 bg-t-bg border-b border-t-border/60 overflow-hidden" style="height:42px">
+        <div id="ticker-wrap" class="tv-embed-container"></div>
+    </div>
+
+    <!-- ========== MAIN ========== -->
+    <main class="flex-1 flex overflow-hidden relative">
+
+        <!-- SIDEBAR -->
+        <aside id="sidebar" class="sidebar w-[296px] bg-t-surface border-r border-t-border flex flex-col flex-shrink-0 overflow-hidden z-50">
+            <!-- Quick Scans -->
+            <div class="p-4 pb-3 border-b border-t-border">
+                <h2 class="text-[10px] font-semibold text-t-muted uppercase tracking-[0.15em] mb-3 flex items-center gap-1.5">
+                    <i class="fas fa-bolt text-t-yellow text-[9px]"></i> Quick Scans
+                </h2>
+                <div class="grid grid-cols-2 gap-1.5" id="scan-btns"></div>
+            </div>
+
+            <!-- Watchlist -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
+                    <h2 class="text-[10px] font-semibold text-t-muted uppercase tracking-[0.15em] flex items-center gap-1.5">
+                        <i class="fas fa-star text-t-yellow text-[9px]"></i> Watchlist
+                    </h2>
+                    <button onclick="toggleAddInput()" class="w-6 h-6 flex items-center justify-center rounded text-t-muted hover:text-t-green hover:bg-t-green/10 transition-all text-xs" aria-label="Add symbol">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <div id="add-form" class="px-4 pb-2 hidden">
+                    <div class="flex gap-1.5">
+                        <input type="text" id="sym-input" placeholder="e.g. AAPL"
+                            class="flex-1 min-w-0 bg-t-elevated border border-t-border rounded-lg px-2.5 py-1.5 text-xs font-mono text-t-text placeholder-t-muted/40 focus:outline-none focus:border-t-green/50 transition-colors"
+                            onkeydown="if(event.key==='Enter')addSymbol()" aria-label="Symbol ticker">
+                        <button onclick="addSymbol()" class="px-2.5 py-1.5 bg-t-green/15 text-t-green rounded-lg text-xs hover:bg-t-green/25 transition-colors" aria-label="Add">
+                            <i class="fas fa-check"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="watchlist" class="flex-1 overflow-y-auto px-2 pb-2"></div>
+            </div>
+
+            <!-- Market Summary -->
+            <div class="p-4 pt-3 border-t border-t-border">
+                <h2 class="text-[10px] font-semibold text-t-muted uppercase tracking-[0.15em] mb-3 flex items-center gap-1.5">
+                    <i class="fas fa-chart-bar text-t-cyan text-[9px]"></i> Market Summary
+                </h2>
+                <div id="mkt-summary" class="space-y-2.5"></div>
+            </div>
+        </aside>
+
+        <!-- CONTENT PANEL -->
+        <section class="flex-1 flex flex-col overflow-hidden min-w-0">
+            <!-- Tab Bar -->
+            <nav class="h-12 flex items-center px-4 border-b border-t-border bg-t-surface/40 flex-shrink-0 relative" role="tablist" aria-label="Main views">
+                <div class="flex items-center gap-0.5 relative" id="tab-bar">
+                    <button role="tab" aria-selected="true" class="tab-btn px-4 py-2 text-sm font-medium text-t-text rounded-md transition-colors" data-tab="screener" onclick="goTab('screener')">
+                        <i class="fas fa-filter mr-1.5 text-[11px]"></i>Screener
+                    </button>
+                    <button role="tab" aria-selected="false" class="tab-btn px-4 py-2 text-sm font-medium text-t-muted rounded-md transition-colors" data-tab="heatmap" onclick="goTab('heatmap')">
+                        <i class="fas fa-th mr-1.5 text-[11px]"></i>Heatmap
+                    </button>
+                    <button role="tab" aria-selected="false" class="tab-btn px-4 py-2 text-sm font-medium text-t-muted rounded-md transition-colors" data-tab="analysis" onclick="goTab('analysis')">
+                        <i class="fas fa-wave-square mr-1.5 text-[11px]"></i>Analysis
+                    </button>
+                </div>
+                <div class="tab-indicator" id="tab-ind"></div>
+
+                <!-- Analysis symbol input -->
+                <div id="analysis-input" class="ml-auto items-center gap-1.5 hidden">
+                    <input type="text" id="analysis-sym" value="AAPL" placeholder="Symbol"
+                        class="bg-t-elevated border border-t-border rounded-lg px-3 py-1.5 text-xs font-mono text-t-text placeholder-t-muted/40 focus:outline-none focus:border-t-green/50 transition-colors w-28"
+                        onkeydown="if(event.key==='Enter')runAnalysis()" aria-label="Analysis symbol">
+                    <button onclick="runAnalysis()" class="text-t-green hover:text-t-green/70 transition-colors" aria-label="Run analysis">
+                        <i class="fas fa-arrow-right text-xs"></i>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Tab Panels -->
+            <div class="flex-1 relative overflow-hidden">
+                <div id="panel-screener" class="absolute inset-0 fade-in" role="tabpanel">
+                    <div id="screener-wrap" class="tv-embed-container"></div>
+                </div>
+                <div id="panel-heatmap" class="absolute inset-0 hidden" role="tabpanel">
+                    <div id="heatmap-wrap" class="tv-embed-container"></div>
+                </div>
+                <div id="panel-analysis" class="absolute inset-0 hidden" role="tabpanel">
+                    <div id="analysis-wrap" class="tv-embed-container"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ========== FOOTER ========== -->
+    <footer class="h-8 flex items-center justify-between px-4 border-t border-t-border bg-t-surface/40 text-[10px] font-mono text-t-muted flex-shrink-0 select-none">
+        <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-t-green inline-block"></span>Connected</span>
+            <span id="last-upd">Updated: --</span>
+        </div>
+        <div class="hidden sm:flex items-center gap-3">
+            <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">S</kbd>Screener</span>
+            <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">H</kbd>Heatmap</span>
+            <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">A</kbd>Analysis</span>
+            <span><kbd class="px-1 py-0.5 bg-t-elevated rounded text-[9px] mr-0.5">W</kbd>Watchlist</span>
+        </div>
+    </footer>
+
+    <!-- ========== JAVASCRIPT ========== -->
+    <script>
+    (function() {
+        'use strict';
+
+        /* ===== State ===== */
+        const S = {
+            tab: 'screener',
+            market: 'america',
+            mktLabel: 'US Markets',
+            scan: 'most_capitalized',
+            inited: { screener: false, heatmap: false, analysis: false },
+            watchlist: JSON.parse(localStorage.getItem('tv_wl') || '["AAPL","GOOGL","MSFT","AMZN","TSLA","NVDA","META"]'),
+        };
+
+        /* ===== Pre-set symbol base prices for watchlist simulation ===== */
+        const BASE = {
+            AAPL:227.48, GOOGL:191.23, MSFT:442.15, AMZN:224.92,
+            TSLA:352.78, NVDA:140.14, META:627.38, NFLX:1024.50,
+            AMD:178.62, BRK.B:524.30, JPM:268.14, VISA:322.87,
+            BTC:104287, ETH:3842, SOL:228, BNB:718, XRP:2.42,
+            SPY:594.20, QQQ:524.80, DIA:432.50, IWM:236.40,
+        };
+        const WL_PRICES = {}; // runtime simulated prices
+
+        /* ===== Scan presets ===== */
+        const SCANS = [
+            { id:'most_capitalized', label:'Top Cap',   icon:'fa-building-columns', screen:'most_capitalized' },
+            { id:'top_gainers',      label:'Gainers',   icon:'fa-arrow-trend-up',   screen:'top_gainers' },
+            { id:'top_losers',       label:'Losers',    icon:'fa-arrow-trend-down',  screen:'top_losers' },
+            { id:'most_volatile',    label:'Volatile',  icon:'fa-bolt',             screen:'most_volatile' },
+            { id:'oversold',         label:'Oversold',  icon:'fa-arrow-down',       screen:'oversold_stocks' },
+            { id:'overbought',       label:'Overbought',icon:'fa-arrow-up',         screen:'overbought_stocks' },
+        ];
+
+        /* ===== Market summary data ===== */
+        const MKT_DATA = {
+            america: [
+                { name:'S&P 500',  p:5942.47, c:0.84 },
+                { name:'NASDAQ',   p:19211.10,c:1.12 },
+                { name:'DOW 30',   p:43287.63,c:0.35 },
+            ],
+            europe: [
+                { name:'FTSE 100', p:8245.72, c:-0.23 },
+                { name:'DAX 40',   p:19874.21,c:0.56 },
+                { name:'CAC 40',   p:7654.30, c:0.18 },
+            ],
+            hongkong: [
+                { name:'Hang Seng', p:20134.56,c:-0.42 },
+                { name:'Shanghai',  p:3267.89, c:0.28 },
+                { name:'Shenzhen',  p:10876.43,c:0.67 },
+            ],
+            crypto: [
+                { name:'Bitcoin',   p:104287.50,c:2.34 },
+                { name:'Ethereum',  p:3842.18,  c:1.89 },
+                { name:'Solana',    p:228.45,   c:-1.23 },
+            ],
+        };
+
+        /* ===== Helpers ===== */
+        const $ = id => document.getElementById(id);
+        const fmt = (n, d=2) => Number(n).toFixed(d);
+        const fmtP = n => n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        const randW = () => (Math.random() - 0.5) * 2;
+
+        /* ===== Widget injection ===== */
+        function injectWidget(containerId, src, config) {
+            const el = $(containerId);
+            el.innerHTML = `<div class="tv-embed-container"><div style="height:100%;width:100%;"></div></div>`;
+            const s = document.createElement('script');
+            s.type = 'text/javascript';
+            s.src = src;
+            s.textContent = JSON.stringify(config);
+            el.firstChild.appendChild(s);
+        }
+
+        /* ===== Toast ===== */
+        function toast(msg, type='info') {
+            const colors = { success:'border-t-green/60 text-t-green', warning:'border-t-yellow/60 text-t-yellow', info:'border-t-cyan/60 text-t-cyan', error:'border-t-red/60 text-t-red' };
+            const icons = { success:'fa-check-circle', warning:'fa-exclamation-triangle', info:'fa-info-circle', error:'fa-times-circle' };
+            const t = document.createElement('div');
+            t.className = `toast-in pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl bg-t-elevated/95 backdrop-blur-md border ${colors[type]} text-xs shadow-xl`;
+            t.innerHTML = `<i class="fas ${icons[type]}"></i><span class="font-medium">${msg}</span>`;
+            $('toasts').appendChild(t);
+            setTimeout(() => { t.classList.replace('toast-in','toast-out'); setTimeout(() => t.remove(), 300); }, 2800);
+        }
+
+        /* ===== Clock ===== */
+        function tick() {
+            $('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12:false });
+        }
+
+        function stampUpdate() {
+            $('last-upd').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+        }
+
+        /* ===== Market Dropdown ===== */
+        window.toggleDropdown = () => $('mkt-dd').classList.toggle('dd-open');
+        document.addEventListener('click', e => { if (!$('mkt-dd').contains(e.target)) $('mkt-dd').classList.remove('dd-open'); });
+
+        window.pickMarket = (mkt, label) => {
+            S.market = mkt; S.mktLabel = label;
+            $('mkt-label').textContent = label;
+            $('mkt-dd').classList.remove('dd-open');
+            document.querySelectorAll('.dd-item').forEach(i => {
+                i.classList.toggle('text-t-green', i.dataset.mkt === mkt);
+                i.classList.toggle('text-t-text', i.dataset.mkt !== mkt);
+            });
+            renderSummary();
+            // Re-init screener after switching tab
+            if (S.tab !== 'screener') goTab('screener');
+            requestAnimationFrame(() => { S.inited.screener = false; S.inited.heatmap = false; initScreener(); });
+            toast('Switched to ' + label, 'info');
+        };
+
+        /* ===== Tabs ===== */
+        window.goTab = (id) => {
+            S.tab = id;
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                const active = b.dataset.tab === id;
+                b.classList.toggle('text-t-text', active);
+                b.classList.toggle('text-t-muted', !active);
+                b.setAttribute('aria-selected', active);
+            });
+            ['screener','heatmap','analysis'].forEach(p => {
+                const el = $('panel-'+p);
+                el.classList.toggle('hidden', p !== id);
+                if (p === id) { el.classList.add('fade-in'); } else { el.classList.remove('fade-in'); }
+            });
+            $('analysis-input').style.display = id === 'analysis' ? 'flex' : 'none';
+            moveIndicator();
+            if (id === 'heatmap' && !S.inited.heatmap) initHeatmap();
+            if (id === 'analysis' && !S.inited.analysis) initAnalysis();
+        };
+
+        function moveIndicator() {
+            const btn = document.querySelector('.tab-btn[aria-selected="true"]');
+            const ind = $('tab-ind');
+            const bar = $('tab-bar');
+            if (!btn || !ind || !bar) return;
+            const br = bar.getBoundingClientRect(), btnr = btn.getBoundingClientRect();
+            ind.style.left = (btnr.left - br.left) + 'px';
+            ind.style.width = btnr.width + 'px';
+        }
+
+        /* ===== Widget Initializers ===== */
+        function initTicker() {
+            injectWidget('ticker-wrap', 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js', {
+                symbols: [
+                    { proName:'FOREXCOM:SPXUSD', title:'S&P 500' },
+                    { proName:'FOREXCOM:NSXUSD', title:'Nasdaq 100' },
+                    { proName:'BITSTAMP:BTCUSD', title:'BTC/USD' },
+                    { proName:'BITSTAMP:ETHUSD', title:'ETH/USD' },
+                    { proName:'FX:EURUSD', title:'EUR/USD' },
+                    { proName:'FX:GBPUSD', title:'GBP/USD' },
+                    { proName:'NASDAQ:AAPL', title:'Apple' },
+                    { proName:'NASDAQ:GOOGL', title:'Alphabet' },
+                    { proName:'NASDAQ:MSFT', title:'Microsoft' },
+                    { proName:'NASDAQ:AMZN', title:'Amazon' },
+                    { proName:'NASDAQ:NVDA', title:'NVIDIA' },
+                    { proName:'NASDAQ:TSLA', title:'Tesla' },
+                ],
+                showSymbolLogo: true,
+                isTransparent: true,
+                displayMode: 'adaptive',
+                colorTheme: 'dark',
+                locale: 'en',
+            });
+        }
+
+        function initScreener() {
+            injectWidget('screener-wrap', 'https://s3.tradingview.com/external-embedding/embed-widget-screener.js', {
+                width: '100%', height: '100%',
+                defaultColumn: 'overview',
+                defaultScreen: S.scan,
+                market: S.market,
+                showToolbar: true,
+                colorTheme: 'dark',
+                locale: 'en',
+                isTransparent: true,
+            });
+            S.inited.screener = true;
+        }
+
+        function initHeatmap() {
+            const src = S.market === 'crypto' ? 'CRYPTO' : 'SPX500';
+            injectWidget('heatmap-wrap', 'https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js', {
+                exchanges: [], dataSource: src,
+                grouping: 'sector', blockSize: 'market_cap_basic', blockColor: 'change',
+                locale: 'en', symbolUrl: '', colorTheme: 'dark',
+                hasTopBar: true, isDataSetEnabled: true, isZoomEnabled: true,
+                hasSymbolTooltip: true, isTransparent: true,
+                width: '100%', height: '100%',
+            });
+            S.inited.heatmap = true;
+        }
+
+        function initAnalysis() {
+            const sym = ($('analysis-sym')?.value || 'AAPL').toUpperCase();
+            const prefix = S.market === 'crypto' ? 'BITSTAMP' : 'NASDAQ';
+            injectWidget('analysis-wrap', 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js', {
+                interval: '1h', width: '100%', height: '100%',
+                isTransparent: true,
+                symbol: prefix + ':' + sym,
+                showIntervalTabs: true,
+                colorTheme: 'dark', locale: 'en',
+            });
+            S.inited.analysis = true;
+        }
+
+        window.runAnalysis = () => {
+            const sym = $('analysis-sym').value.trim().toUpperCase();
+            if (!sym) return;
+            S.inited.analysis = false;
+            requestAnimationFrame(initAnalysis);
+            toast('Analyzing ' + sym, 'info');
+        };
+
+        /* ===== Scan Buttons ===== */
+        function renderScans() {
+            $('scan-btns').innerHTML = SCANS.map(s =>
+                `<button class="btn-scan rounded-lg px-2.5 py-2 text-left ${S.scan===s.screen?'active':''}" onclick="pickScan('${s.screen}')" aria-label="${s.label} scan">
+                    <i class="fas ${s.icon} text-[10px] mr-1 opacity-70"></i><span class="text-[11px] font-medium">${s.label}</span>
+                </button>`
+            ).join('');
+        }
+
+        window.pickScan = (screen) => {
+            S.scan = screen;
+            renderScans();
+            if (S.tab !== 'screener') goTab('screener');
+            requestAnimationFrame(() => { S.inited.screener = false; initScreener(); });
+            const preset = SCANS.find(s => s.screen === screen);
+            toast('Scan: ' + (preset?.label || screen), 'success');
+        };
+
+        /* ===== Watchlist ===== */
+        function initPrices() {
+            S.watchlist.forEach(sym => {
+                if (!WL_PRICES[sym]) WL_PRICES[sym] = { price: BASE[sym] || (Math.random()*200+20), change: randW() };
+            });
+        }
+
+        function renderWatchlist() {
+            initPrices();
+            const el = $('watchlist');
+            if (!S.watchlist.length) {
+                el.innerHTML = `<div class="p-6 text-center text-t-muted text-xs"><i class="fas fa-inbox text-xl mb-2 block opacity-20"></i>No symbols added</div>`;
+                return;
+            }
+            el.innerHTML = S.watchlist.map((sym, i) => {
+                const d = WL_PRICES[sym];
+                const up = d.change >= 0;
+                return `<div class="wl-item flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer group" onclick="viewSym('${sym}')">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 ${up?'bg-t-green':'bg-t-red'}"></span>
+                        <span class="text-[13px] font-semibold font-mono truncate">${sym}</span>
+                    </div>
+                    <div class="flex items-center gap-2.5 flex-shrink-0">
+                        <span class="text-[11px] font-mono text-t-muted">$${fmtP(d.price)}</span>
+                        <span class="text-[11px] font-mono font-medium ${up?'text-t-green':'text-t-red'} min-w-[52px] text-right">${up?'+':''}${fmt(d.change)}%</span>
+                        <button onclick="event.stopPropagation();rmSym(${i})" class="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center rounded text-t-muted hover:text-t-red hover:bg-t-red/10 transition-all" aria-label="Remove ${sym}"><i class="fas fa-xmark text-[10px]"></i></button>
+                    </div>
+                </div>`;
+            }).join('');
+            localStorage.setItem('tv_wl', JSON.stringify(S.watchlist));
+        }
+
+        window.toggleAddInput = () => {
+            const f = $('add-form');
+            f.classList.toggle('hidden');
+            if (!f.classList.contains('hidden')) $('sym-input').focus();
+        };
+
+        window.addSymbol = () => {
+            const inp = $('sym-input'), sym = inp.value.trim().toUpperCase();
+            if (!sym) return;
+            if (S.watchlist.includes(sym)) { toast(sym + ' already in watchlist', 'warning'); return; }
+            S.watchlist.push(sym);
+            WL_PRICES[sym] = { price: BASE[sym] || (Math.random()*200+20), change: randW() };
+            inp.value = '';
+            renderWatchlist();
+            toast(sym + ' added to watchlist', 'success');
+        };
+
+        window.rmSym = (i) => {
+            const sym = S.watchlist[i];
+            S.watchlist.splice(i, 1);
+            delete WL_PRICES[sym];
+            renderWatchlist();
+            toast(sym + ' removed', 'info');
+        };
+
+        window.viewSym = (sym) => {
+            $('analysis-sym').value = sym;
+            S.inited.analysis = false;
+            goTab('analysis');
+            requestAnimationFrame(initAnalysis);
+        };
+
+        /* ===== Market Summary ===== */
+        function renderSummary() {
+            const data = MKT_DATA[S.market] || [];
+            $('mkt-summary').innerHTML = data.map(d => {
+                const up = d.c >= 0;
+                return `<div class="flex items-center justify-between">
+                    <span class="text-[11px] text-t-muted">${d.name}</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[11px] font-mono">${fmtP(d.p)}</span>
+                        <span class="text-[10px] font-mono font-medium ${up?'text-t-green':'text-t-red'}">${up?'+':''}${fmt(d.c)}%</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function simMarket() {
+            (MKT_DATA[S.market]||[]).forEach(d => {
+                d.p *= 1 + (Math.random()-0.5)*0.0008;
+                d.c += (Math.random()-0.5)*0.04;
+                d.p = +d.p.toFixed(2); d.c = +d.c.toFixed(2);
+            });
+            renderSummary();
+        }
+
+        function simWatchlist() {
+            S.watchlist.forEach(sym => {
+                const d = WL_PRICES[sym]; if (!d) return;
+                d.price *= 1 + (Math.random()-0.5)*0.0015;
+                d.change += (Math.random()-0.5)*0.06;
+                d.price = +d.price.toFixed(2); d.change = +d.change.toFixed(2);
+            });
+            renderWatchlist();
+        }
+
+        /* ===== Sidebar Toggle ===== */
+        window.toggleSidebar = () => {
+            $('sidebar').classList.toggle('open');
+            $('sidebar-overlay').classList.toggle('hidden');
+        };
+
+        /* ===== Keyboard Shortcuts ===== */
+        document.addEventListener('keydown', e => {
+            if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+            switch(e.key.toLowerCase()) {
+                case 's': goTab('screener'); break;
+                case 'h': goTab('heatmap'); break;
+                case 'a': goTab('analysis'); break;
+                case 'w': toggleAddInput(); break;
+                case 'escape':
+                    $('mkt-dd').classList.remove('dd-open');
+                    $('sidebar').classList.remove('open');
+                    $('sidebar-overlay').classList.add('hidden');
+                    break;
+            }
+        });
+
+        /* ===== Init ===== */
+        function boot() {
+            tick(); setInterval(tick, 1000);
+            stampUpdate(); setInterval(stampUpdate, 30000);
+            renderScans();
+            renderWatchlist();
+            renderSummary();
+            moveIndicator();
+
+            initTicker();
+            // Small delay so the screener container has layout
+            setTimeout(initScreener, 100);
+
+            setInterval(simMarket, 3000);
+            setInterval(simWatchlist, 2500);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', boot);
+        } else {
+            boot();
+        }
+        window.addEventListener('resize', moveIndicator);
+    })();
+    </script>
+</body>
+</html>
